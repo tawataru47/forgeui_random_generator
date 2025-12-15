@@ -6,47 +6,78 @@ import random
 import os
 import traceback
 import html
-import base64
-import time
+import urllib.parse
+from fastapi import FastAPI, Request
+from fastapi.responses import FileResponse
 
 # --- User Setting ---
 TARGET_LORA_DIR = r"C:\stableDiffusion\stable-diffusion-webui\models\Lora"
 
+# --- API Endpoint for Images (The Magic Fix) ---
+# これにより、別ドライブの画像もブラウザが直接読み込めるようになります
+def add_image_route(demo: gr.Blocks, app: FastAPI):
+    @app.get("/rg_image")
+    async def serve_image(path: str):
+        if os.path.exists(path):
+            return FileResponse(path)
+        return "File not found", 404
+
+script_callbacks.on_app_started(add_image_route)
+
 # --- JavaScript Logic ---
 JS_SCRIPT = """
 <script>
-    function insertTextToPrompt(text) {
-        var ta = gradioApp().querySelector('#random_gen_result_box textarea');
-        if (!ta) return;
-        var currentVal = ta.value;
-        var sep = currentVal.trim().length > 0 ? ", " : "";
-        var nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value").set;
-        nativeInputValueSetter.call(ta, currentVal + sep + text);
-        ta.dispatchEvent(new Event('input', { bubbles: true }));
+    // テキストエリアに値をセットし、イベントを発火させる関数
+    function setNativeValue(element, value) {
+        const valueSetter = Object.getOwnPropertyDescriptor(element, 'value').set;
+        const prototype = Object.getPrototypeOf(element);
+        const prototypeValueSetter = Object.getOwnPropertyDescriptor(prototype, 'value').set;
+        
+        if (valueSetter && valueSetter !== prototypeValueSetter) {
+            prototypeValueSetter.call(element, value);
+        } else {
+            valueSetter.call(element, value);
+        }
+        element.dispatchEvent(new Event('input', { bubbles: true }));
     }
 
+    // 1. Add LoRA
     window.addLoraToGen = function(element) {
         var name = element.getAttribute('data-name');
         var trigger = element.getAttribute('data-trigger');
         var text = "<lora:" + name + ":1>";
+        
         if (trigger && trigger !== "None" && trigger !== "" && trigger !== "null") {
             text += ", " + trigger;
         }
-        insertTextToPrompt(text);
+        
+        var ta = gradioApp().querySelector('#random_gen_result_box textarea');
+        if (ta) {
+            var currentVal = ta.value;
+            var sep = currentVal.trim().length > 0 ? ", " : "";
+            setNativeValue(ta, currentVal + sep + text);
+        }
     }
 
+    // 2. Send Function (Fixed)
     window.sendPromptTo = function(tabName) {
         var src = gradioApp().querySelector('#random_gen_result_box textarea');
-        if (!src) return;
+        if (!src) { alert("Source textbox not found"); return; }
+        
         var targetId = (tabName === 'txt2img') ? '#txt2img_prompt textarea' : '#img2img_prompt textarea';
         var dest = gradioApp().querySelector(targetId);
+        
         if (dest) {
-            var nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value").set;
-            nativeInputValueSetter.call(dest, src.value);
-            dest.dispatchEvent(new Event('input', { bubbles: true }));
+            setNativeValue(dest, src.value);
+            
+            // Tab Switch
             var tabIndex = (tabName === 'txt2img') ? 1 : 2; 
-            var tab = gradioApp().querySelector('#tabs button:nth-child(' + tabIndex + ')'); 
-            if (tab) tab.click();
+            var tabButtons = gradioApp().querySelectorAll('#tabs > .tab-nav > button');
+            if (tabButtons.length >= tabIndex) {
+                tabButtons[tabIndex - 1].click();
+            }
+        } else {
+            alert("Destination textbox not found: " + targetId);
         }
     }
 </script>
@@ -63,13 +94,11 @@ CSS = """
     border-radius: 4px;
 }
 .rg-lora-grid {
-    display: flex;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
     gap: 10px;
-    align-content: flex-start;
 }
 .rg-lora-card {
-    width: 120px;
     position: relative;
     cursor: pointer;
     border-radius: 6px;
@@ -81,18 +110,17 @@ CSS = """
     overflow: visible;
 }
 .rg-lora-card:hover {
-    transform: scale(1.03);
+    transform: scale(1.05);
     border-color: var(--primary-500);
     z-index: 50;
-    box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.6);
 }
 .rg-thumb-box {
     width: 100%;
-    height: 180px;
+    aspect-ratio: 2/3;
     overflow: hidden;
     border-radius: 6px 6px 0 0;
     background: #222;
-    position: relative;
 }
 .rg-thumb-img {
     width: 100%;
@@ -106,8 +134,9 @@ CSS = """
     align-items: center;
     justify-content: center;
     color: #666;
-    font-size: 12px;
+    font-size: 11px;
     text-align: center;
+    background: #1a1a1a;
 }
 .rg-card-title {
     padding: 4px;
@@ -120,17 +149,18 @@ CSS = """
     background: rgba(0,0,0,0.4);
     color: #ddd;
 }
+/* Popup */
 .rg-popup {
     display: none;
     position: absolute;
-    bottom: 90%;
+    bottom: 100%;
     left: 50%;
-    transform: translateX(-50%);
+    transform: translate(-50%, -5px);
     width: 260px;
-    background: rgba(15, 15, 20, 0.98);
+    background: rgba(10, 10, 15, 0.98);
     border: 1px solid var(--primary-500);
     border-radius: 6px;
-    padding: 8px;
+    padding: 10px;
     pointer-events: none;
     z-index: 1000;
     box-shadow: 0 5px 20px rgba(0,0,0,0.8);
@@ -148,13 +178,13 @@ CSS = """
 }
 .rg-badge {
     display: inline-block;
-    background: #444;
-    padding: 2px 4px;
+    background: #333;
+    padding: 2px 5px;
     border-radius: 3px;
     margin: 2px;
     font-size: 10px;
     color: #8f8;
-    border: 1px solid #666;
+    border: 1px solid #555;
 }
 """
 
@@ -175,36 +205,13 @@ def load_data(file_type="tags"):
             return json.load(f)
     except: return {}
 
-# --- LoRA Logic ---
-# グローバル変数でLoRAリストをキャッシュ（再スキャン防止）
-CACHED_LORA_LIB = None
-
-def get_image_base64(path):
-    if not os.path.exists(path): return None
-    try:
-        with open(path, "rb") as image_file:
-            encoded_string = base64.b64encode(image_file.read()).decode('utf-8')
-            ext = os.path.splitext(path)[1].lower()
-            mime = "png"
-            if ext in [".jpg", ".jpeg"]: mime = "jpeg"
-            elif ext == ".webp": mime = "webp"
-            return f"data:image/{mime};base64,{encoded_string}"
-    except:
-        return None
-
-def scan_loras(load_images=False, progress=gr.Progress()):
+# --- LoRA Scanning ---
+def get_lora_library():
     root_path = TARGET_LORA_DIR
     if not os.path.exists(root_path): return None
 
     library = {}
-    
-    # 全ファイル数をカウント（プログレスバー用）
-    file_count = 0
-    for _, _, files in os.walk(root_path):
-        file_count += len([f for f in files if f.endswith(".safetensors")])
-    
-    processed = 0
-    
+
     for root, dirs, files in os.walk(root_path):
         rel_path = os.path.relpath(root, root_path)
         folder_name = "Root" if rel_path == "." else rel_path
@@ -212,15 +219,11 @@ def scan_loras(load_images=False, progress=gr.Progress()):
         lora_list = []
         for file in files:
             if file.endswith(".safetensors"):
-                processed += 1
-                if load_images and processed % 10 == 0:
-                    progress(processed / file_count, desc=f"Loading Images... {processed}/{file_count}")
-                
                 name = os.path.splitext(file)[0]
                 full_path = os.path.join(root, file)
                 base_name_path = os.path.splitext(full_path)[0]
                 
-                # Image Path
+                # Image Preview (Just Path)
                 preview_file = None
                 for ext in [".preview.png", ".png", ".jpg", ".jpeg", ".webp"]:
                     test_path = base_name_path + ext
@@ -228,17 +231,20 @@ def scan_loras(load_images=False, progress=gr.Progress()):
                         preview_file = test_path
                         break
                 
-                # Base64 Encode (Only if requested)
-                img_data = None
-                if load_images and preview_file:
-                    img_data = get_image_base64(preview_file)
+                # Use our Custom API Route!
+                img_url = None
+                if preview_file:
+                    # パスをURLパラメータとして渡す
+                    img_url = f"/rg_image?path={urllib.parse.quote(preview_file)}"
 
                 # Metadata
                 triggers = []
                 json_path = base_name_path + ".json"
                 civitai_path = base_name_path + ".civitai.info"
                 
-                target_meta = json_path if os.path.exists(json_path) else (civitai_path if os.path.exists(civitai_path) else None)
+                target_meta = None
+                if os.path.exists(json_path): target_meta = json_path
+                elif os.path.exists(civitai_path): target_meta = civitai_path
                 
                 if target_meta:
                     try:
@@ -255,8 +261,7 @@ def scan_loras(load_images=False, progress=gr.Progress()):
 
                 lora_list.append({
                     "name": name,
-                    "image": img_data,
-                    "has_image": bool(preview_file), # 画像ファイルの有無だけ記録
+                    "image": img_url,
                     "triggers": triggers,
                     "trigger_text": trigger_text
                 })
@@ -268,10 +273,9 @@ def scan_loras(load_images=False, progress=gr.Progress()):
     sorted_lib = {}
     if "Root" in library: sorted_lib["Root"] = library.pop("Root")
     for k in sorted(library.keys()): sorted_lib[k] = library[k]
-    
     return sorted_lib
 
-def make_html_for_loras(lora_list, images_loaded=False):
+def make_html_for_loras(lora_list):
     if not lora_list: return "<div style='padding:20px'>No LoRAs found.</div>"
     
     html_out = "<div class='rg-lora-grid'>"
@@ -279,17 +283,14 @@ def make_html_for_loras(lora_list, images_loaded=False):
         name = html.escape(lora["name"])
         trigger_safe = html.escape(lora["trigger_text"]).replace("'", "\\'")
         
-        # Image Logic
-        img_html = ""
-        popup_img = ""
-        
-        if lora["image"]: # Base64データがある場合
-            img_html = f"<img src='{lora['image']}' class='rg-thumb-img'>"
-            popup_img = f"<img src='{lora['image']}' class='rg-popup-img'>"
-        elif lora["has_image"] and not images_loaded: # 画像ファイルはあるけどまだ読み込んでない場合
-            img_html = f"<div class='rg-no-thumb'><span>Image<br>Not Loaded</span></div>"
-        else: # 画像がない場合
-            img_html = f"<div class='rg-no-thumb'><span>NO IMG</span></div>"
+        # Image
+        if lora["image"]:
+            # API経由で読み込むため高速 & 確実
+            img_html = f"""<img src='{lora['image']}' class='rg-thumb-img' loading='lazy'>"""
+            popup_img = f"<img src='{lora['image']}' class='rg-popup-img' loading='lazy'>"
+        else:
+            img_html = f"<div class='rg-no-thumb'>NO IMG</div>"
+            popup_img = ""
             
         # Triggers
         if lora["triggers"]:
@@ -313,28 +314,11 @@ def make_html_for_loras(lora_list, images_loaded=False):
     html_out += "</div>"
     return html_out
 
-# グローバルキャッシュを更新してHTMLを返す関数
-def refresh_lora_library(load_images=False):
-    global CACHED_LORA_LIB
-    CACHED_LORA_LIB = scan_loras(load_images=load_images)
-    
-    # HTML生成（タブごとに作る必要があるため、Gradioのupdateで返すのは複雑になる）
-    # ここでは、ボタンが押されたらリロードを促すメッセージを出すか、
-    # あるいはUI全体を再描画させる必要がある。
-    # 簡易的に、最初のタブのHTMLだけ返すようなことはできない。
-    # よって、Gradioの構成上、ボタンクリックで全タブの中身を一括更新する。
-    
-    updates = []
-    if CACHED_LORA_LIB:
-        for folder, items in CACHED_LORA_LIB.items():
-            updates.append(make_html_for_loras(items, images_loaded=load_images))
-    return updates
-
 # --- Generator Logic ---
 def generate_prompt_logic(gen_mode, clothing_mode, is_nsfw, is_extreme, use_quality):
     try:
         data = load_data("tags")
-        if not data: return "Error: Data load failed."
+        if not data: return "Error: tags.json not found or corrupted."
         prompts = []
         
         if "appearance" in data:
@@ -365,8 +349,18 @@ def generate_prompt_logic(gen_mode, clothing_mode, is_nsfw, is_extreme, use_qual
         allowed = ["sfw"]
         if is_nsfw: allowed.append("nsfw")
         if is_extreme: allowed.append("extreme")
+        
+        # シチュエーション抽出
         sits = [s for s in data["situations"] if s.get("nsfw_level", "sfw") in allowed]
-        sit = random.choice(sits) if sits else {"tags":"", "poses":["standing"]}
+        
+        # フォールバック処理の修正
+        if not sits:
+            # NSFWフィルタなどで候補がゼロになった場合
+            sits = [s for s in data["situations"] if s.get("nsfw_level") == "sfw"]
+            if not sits: # SFWすらなければ簡単なものを生成
+                sits = [{"tags": "simple background", "poses": ["standing"]}]
+        
+        sit = random.choice(sits)
         prompts.append(sit["tags"])
         
         if gen_mode == "Context-Aware (状況に合わせる)":
@@ -377,7 +371,7 @@ def generate_prompt_logic(gen_mode, clothing_mode, is_nsfw, is_extreme, use_qual
         final = ", ".join(list(set(prompts)))
         if use_quality: final = data["quality_tags"] + ", " + final
         return final
-    except Exception as e: return str(e)
+    except Exception as e: return f"Error: {str(e)}"
 
 def save_prompt_action(name, prompt):
     if not name: return gr.update(), "Error: No Name"
@@ -394,20 +388,14 @@ def load_prompt_action(name):
 def on_ui_tabs():
     saved_data = load_data("saved")
     saved_choices = list(saved_data.keys()) if saved_data else []
-    
-    # 起動時は画像なしで高速スキャン
-    global CACHED_LORA_LIB
-    if CACHED_LORA_LIB is None:
-        CACHED_LORA_LIB = scan_loras(load_images=False)
-
-    html_components = [] # 後で更新するためにリストに保持
+    lora_lib = get_lora_library()
 
     with gr.Blocks(analytics_enabled=False, css=CSS) as ui:
         gr.HTML(visible=False, value=JS_SCRIPT)
 
         with gr.Row():
             with gr.Column(scale=1, min_width=300):
-                gr.Markdown("### 🎲 Random Gen v2.6")
+                gr.Markdown("### 🎲 Random Gen v2.7")
                 with gr.Group():
                     gen_mode = gr.Radio(["Context-Aware (状況に合わせる)", "Random Chaos (完全ランダム)"], label="Mode", value="Context-Aware (状況に合わせる)")
                     cloth_mode = gr.Radio(["Full Set (全身セット)", "Mix & Match (パーツ別ランダム)"], label="Outfit", value="Full Set (全身セット)")
@@ -429,41 +417,15 @@ def on_ui_tabs():
                     btn_txt = gr.Button("👉 Send to txt2img")
                     btn_img = gr.Button("👉 Send to img2img")
 
-                # LoRA Section
-                with gr.Row(equal_height=True):
-                    gr.Markdown("### 🧬 LoRA Library")
-                    # 画像読み込みボタン
-                    btn_load_img = gr.Button("📷 Load Images (Slow)", scale=0, size="sm")
-
-                if CACHED_LORA_LIB:
+                gr.Markdown("### 🧬 LoRA Library")
+                if lora_lib:
                     with gr.Tabs():
-                        for folder, items in CACHED_LORA_LIB.items():
+                        for folder, items in lora_lib.items():
                             with gr.TabItem(label=f"{folder} ({len(items)})"):
                                 with gr.Column(elem_classes=["rg-lora-container"]):
-                                    # HTMLコンポーネントを作成し、リストに追加
-                                    h = gr.HTML(make_html_for_loras(items, images_loaded=False))
-                                    html_components.append(h)
+                                    gr.HTML(make_html_for_loras(items))
                 else:
                     gr.Markdown(f"**Error:** LoRA folder not found at `{TARGET_LORA_DIR}`.")
-
-        # Event: Load Images
-        # 全てのHTMLコンポーネントを更新対象にする
-        def load_images_handler():
-            global CACHED_LORA_LIB
-            # 画像ありで再スキャン（重い処理）
-            CACHED_LORA_LIB = scan_loras(load_images=True)
-            new_htmls = []
-            if CACHED_LORA_LIB:
-                for folder, items in CACHED_LORA_LIB.items():
-                    new_htmls.append(make_html_for_loras(items, images_loaded=True))
-            # コンポーネントの数だけ返す（足りない場合は無視されるが、基本的に数は合うはず）
-            return new_htmls
-
-        btn_load_img.click(
-            fn=load_images_handler,
-            inputs=[],
-            outputs=html_components # 全タブのHTMLを一括更新
-        )
 
         btn_gen.click(fn=generate_prompt_logic, inputs=[gen_mode, cloth_mode, nsfw, extreme, quality], outputs=[output_box])
         btn_save.click(fn=save_prompt_action, inputs=[save_name, output_box], outputs=[saved_dd, save_msg])
