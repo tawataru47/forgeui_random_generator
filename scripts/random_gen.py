@@ -13,8 +13,7 @@ from fastapi.responses import FileResponse
 # --- User Setting ---
 TARGET_LORA_DIR = r"C:\stableDiffusion\stable-diffusion-webui\models\Lora"
 
-# --- API Endpoint for Images (The Magic Fix) ---
-# これにより、別ドライブの画像もブラウザが直接読み込めるようになります
+# --- API Endpoint (画像配信用) ---
 def add_image_route(demo: gr.Blocks, app: FastAPI):
     @app.get("/rg_image")
     async def serve_image(path: str):
@@ -27,106 +26,125 @@ script_callbacks.on_app_started(add_image_route)
 # --- JavaScript Logic ---
 JS_SCRIPT = """
 <script>
-    // テキストエリアに値をセットし、イベントを発火させる関数
-    function setNativeValue(element, value) {
-        const valueSetter = Object.getOwnPropertyDescriptor(element, 'value').set;
-        const prototype = Object.getPrototypeOf(element);
-        const prototypeValueSetter = Object.getOwnPropertyDescriptor(prototype, 'value').set;
-        
-        if (valueSetter && valueSetter !== prototypeValueSetter) {
-            prototypeValueSetter.call(element, value);
-        } else {
-            valueSetter.call(element, value);
+    // テキストエリアへの書き込み関数
+    function insertTextToPrompt(text) {
+        // ID指定でテキストエリアを探す
+        var ta = gradioApp().querySelector('#random_gen_result_box textarea');
+        if (!ta) {
+            console.error("Target textarea not found!");
+            return;
         }
-        element.dispatchEvent(new Event('input', { bubbles: true }));
+        
+        var currentVal = ta.value;
+        var sep = currentVal.trim().length > 0 ? ", " : "";
+        
+        // ReactのSetterを使って値を更新（これが重要）
+        var nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value").set;
+        nativeInputValueSetter.call(ta, currentVal + sep + text);
+        
+        // 入力イベントを発火
+        ta.dispatchEvent(new Event('input', { bubbles: true }));
     }
 
-    // 1. Add LoRA
+    // LoRAカードクリック時の処理
     window.addLoraToGen = function(element) {
         var name = element.getAttribute('data-name');
         var trigger = element.getAttribute('data-trigger');
+        
         var text = "<lora:" + name + ":1>";
         
         if (trigger && trigger !== "None" && trigger !== "" && trigger !== "null") {
             text += ", " + trigger;
         }
         
-        var ta = gradioApp().querySelector('#random_gen_result_box textarea');
-        if (ta) {
-            var currentVal = ta.value;
-            var sep = currentVal.trim().length > 0 ? ", " : "";
-            setNativeValue(ta, currentVal + sep + text);
-        }
+        insertTextToPrompt(text);
     }
 
-    // 2. Send Function (Fixed)
+    // Send to ボタンの処理
     window.sendPromptTo = function(tabName) {
         var src = gradioApp().querySelector('#random_gen_result_box textarea');
-        if (!src) { alert("Source textbox not found"); return; }
+        if (!src) return;
         
         var targetId = (tabName === 'txt2img') ? '#txt2img_prompt textarea' : '#img2img_prompt textarea';
         var dest = gradioApp().querySelector(targetId);
         
         if (dest) {
-            setNativeValue(dest, src.value);
+            var nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value").set;
+            nativeInputValueSetter.call(dest, src.value);
+            dest.dispatchEvent(new Event('input', { bubbles: true }));
             
-            // Tab Switch
             var tabIndex = (tabName === 'txt2img') ? 1 : 2; 
             var tabButtons = gradioApp().querySelectorAll('#tabs > .tab-nav > button');
             if (tabButtons.length >= tabIndex) {
                 tabButtons[tabIndex - 1].click();
             }
-        } else {
-            alert("Destination textbox not found: " + targetId);
         }
     }
 </script>
 """
 
-# --- CSS ---
+# --- CSS (画像サイズ強制固定) ---
 CSS = """
+/* コンテナ */
 .rg-lora-container {
     height: 600px;
     overflow-y: auto;
     padding: 10px;
     background-color: var(--background-fill-primary);
     border: 1px solid var(--border-color-primary);
-    border-radius: 4px;
+    border-radius: 6px;
 }
+
+/* グリッドレイアウト */
 .rg-lora-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-    gap: 10px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-content: flex-start;
 }
+
+/* カード本体 */
 .rg-lora-card {
+    width: 140px; /* カード幅固定 */
+    height: 200px; /* カード高さ固定 */
     position: relative;
     cursor: pointer;
-    border-radius: 6px;
+    border-radius: 8px;
     background: var(--neutral-800);
     border: 1px solid var(--border-color-primary);
     display: flex;
     flex-direction: column;
-    transition: transform 0.1s;
-    overflow: visible;
+    overflow: visible; /* ポップアップをはみ出させる */
+    transition: transform 0.15s, border-color 0.15s;
+    user-select: none;
 }
+
 .rg-lora-card:hover {
-    transform: scale(1.05);
+    transform: translateY(-3px);
     border-color: var(--primary-500);
-    z-index: 50;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.6);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+    z-index: 100;
 }
+
+/* サムネイル枠 */
 .rg-thumb-box {
     width: 100%;
-    aspect-ratio: 2/3;
+    height: 140px !important; /* 画像エリアの高さ強制固定 */
     overflow: hidden;
-    border-radius: 6px 6px 0 0;
+    border-radius: 8px 8px 0 0;
     background: #222;
+    flex-shrink: 0;
 }
+
+/* 画像本体 */
 .rg-thumb-img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: cover !important; /* 枠に合わせてトリミング */
+    display: block;
 }
+
+/* 画像なしの場合 */
 .rg-no-thumb {
     width: 100%;
     height: 100%;
@@ -136,55 +154,67 @@ CSS = """
     color: #666;
     font-size: 11px;
     text-align: center;
-    background: #1a1a1a;
+    background: linear-gradient(135deg, #2a2a2a 25%, #202020 25%, #202020 50%, #2a2a2a 50%, #2a2a2a 75%, #202020 75%, #202020 100%);
+    background-size: 20px 20px;
 }
+
+/* タイトル部分 */
 .rg-card-title {
-    padding: 4px;
-    font-size: 10px;
+    padding: 6px 4px;
+    font-size: 11px;
     font-weight: bold;
     text-align: center;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    background: rgba(0,0,0,0.4);
-    color: #ddd;
+    color: #eee;
+    background: rgba(0,0,0,0.2);
+    flex-grow: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
-/* Popup */
+
+/* ホバー時のポップアップ */
 .rg-popup {
     display: none;
     position: absolute;
-    bottom: 100%;
+    bottom: 105%; /* カードの上に表示 */
     left: 50%;
-    transform: translate(-50%, -5px);
+    transform: translateX(-50%);
     width: 260px;
-    background: rgba(10, 10, 15, 0.98);
+    background: rgba(15, 15, 20, 0.98);
     border: 1px solid var(--primary-500);
-    border-radius: 6px;
+    border-radius: 8px;
     padding: 10px;
-    pointer-events: none;
-    z-index: 1000;
-    box-shadow: 0 5px 20px rgba(0,0,0,0.8);
+    pointer-events: none; /* クリックを透過させる（重要） */
+    z-index: 9999;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.8);
 }
+
 .rg-lora-card:hover .rg-popup {
     display: block;
 }
+
 .rg-popup-img {
     width: 100%;
     max-height: 350px;
     object-fit: contain;
     border-radius: 4px;
-    margin-bottom: 5px;
+    margin-bottom: 6px;
     background: #000;
 }
+
 .rg-badge {
     display: inline-block;
     background: #333;
-    padding: 2px 5px;
-    border-radius: 3px;
+    padding: 2px 6px;
+    border-radius: 4px;
     margin: 2px;
     font-size: 10px;
     color: #8f8;
     border: 1px solid #555;
+    font-family: monospace;
 }
 """
 
@@ -223,7 +253,7 @@ def get_lora_library():
                 full_path = os.path.join(root, file)
                 base_name_path = os.path.splitext(full_path)[0]
                 
-                # Image Preview (Just Path)
+                # Preview Image
                 preview_file = None
                 for ext in [".preview.png", ".png", ".jpg", ".jpeg", ".webp"]:
                     test_path = base_name_path + ext
@@ -231,10 +261,9 @@ def get_lora_library():
                         preview_file = test_path
                         break
                 
-                # Use our Custom API Route!
                 img_url = None
                 if preview_file:
-                    # パスをURLパラメータとして渡す
+                    # API経由で読み込む
                     img_url = f"/rg_image?path={urllib.parse.quote(preview_file)}"
 
                 # Metadata
@@ -283,21 +312,21 @@ def make_html_for_loras(lora_list):
         name = html.escape(lora["name"])
         trigger_safe = html.escape(lora["trigger_text"]).replace("'", "\\'")
         
-        # Image
+        # Image Logic
         if lora["image"]:
-            # API経由で読み込むため高速 & 確実
             img_html = f"""<img src='{lora['image']}' class='rg-thumb-img' loading='lazy'>"""
             popup_img = f"<img src='{lora['image']}' class='rg-popup-img' loading='lazy'>"
         else:
             img_html = f"<div class='rg-no-thumb'>NO IMG</div>"
             popup_img = ""
             
-        # Triggers
+        # Trigger Badges
         if lora["triggers"]:
             t_html = "".join([f"<span class='rg-badge'>{html.escape(t)}</span>" for t in lora["triggers"]])
         else:
             t_html = "<span style='color:#777; font-style:italic;'>No triggers</span>"
 
+        # Card HTML
         card = f"""
         <div class='rg-lora-card' onclick="addLoraToGen(this)" data-name="{name}" data-trigger="{trigger_safe}" title="{name}">
             <div class='rg-thumb-box'>{img_html}</div>
@@ -318,7 +347,7 @@ def make_html_for_loras(lora_list):
 def generate_prompt_logic(gen_mode, clothing_mode, is_nsfw, is_extreme, use_quality):
     try:
         data = load_data("tags")
-        if not data: return "Error: tags.json not found or corrupted."
+        if not data: return "Error: Data load failed."
         prompts = []
         
         if "appearance" in data:
@@ -349,17 +378,12 @@ def generate_prompt_logic(gen_mode, clothing_mode, is_nsfw, is_extreme, use_qual
         allowed = ["sfw"]
         if is_nsfw: allowed.append("nsfw")
         if is_extreme: allowed.append("extreme")
-        
-        # シチュエーション抽出
         sits = [s for s in data["situations"] if s.get("nsfw_level", "sfw") in allowed]
-        
-        # フォールバック処理の修正
+        # Fallback if no situations found
         if not sits:
-            # NSFWフィルタなどで候補がゼロになった場合
-            sits = [s for s in data["situations"] if s.get("nsfw_level") == "sfw"]
-            if not sits: # SFWすらなければ簡単なものを生成
-                sits = [{"tags": "simple background", "poses": ["standing"]}]
-        
+             sits = [s for s in data["situations"] if s.get("nsfw_level") == "sfw"]
+             if not sits: sits = [{"tags": "simple background", "poses": ["standing"]}]
+
         sit = random.choice(sits)
         prompts.append(sit["tags"])
         
@@ -395,7 +419,7 @@ def on_ui_tabs():
 
         with gr.Row():
             with gr.Column(scale=1, min_width=300):
-                gr.Markdown("### 🎲 Random Gen v2.7")
+                gr.Markdown("### 🎲 Random Gen v2.8")
                 with gr.Group():
                     gen_mode = gr.Radio(["Context-Aware (状況に合わせる)", "Random Chaos (完全ランダム)"], label="Mode", value="Context-Aware (状況に合わせる)")
                     cloth_mode = gr.Radio(["Full Set (全身セット)", "Mix & Match (パーツ別ランダム)"], label="Outfit", value="Full Set (全身セット)")
