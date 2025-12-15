@@ -1,6 +1,3 @@
-cd ~/Desktop/sd-forge-random-generator
-
-cat << 'EOF' > scripts/random_gen.py
 import modules.scripts as scripts
 import gradio as gr
 from modules import script_callbacks
@@ -153,4 +150,3 @@ def on_ui_tabs():
         return []
 
 script_callbacks.on_ui_tabs(on_ui_tabs)
-EOF
