@@ -1,35 +1,205 @@
 {
-  "quality_tags": "masterpiece, best quality",
-  "negative_prompt": "low quality",
+  "quality_tags": "masterpiece, best quality, ultra detailed, 8k wallpaper, highres, extremely detailed eyes, detailed skin",
+  "negative_prompt": "worst quality, low quality, normal quality, lowres, bad anatomy, bad hands, missing fingers, extra digit, fewer digits, monster, alien, tentacles, gore, horror",
+  
   "appearance": {
-    "hair_texture": ["straight"],
-    "hair": ["long hair"],
-    "eyes": ["blue eyes"],
-    "body": ["tall"],
-    "accessories": ["glasses"],
+    "hair_texture": [
+      "straight hair", "wavy hair", "curly hair", "messy hair", "bed head", 
+      "silky hair", "shiny hair", "voluminous hair", "wet hair", "windblown hair", 
+      "frizzy hair", "braided hair", "slicked back"
+    ],
+    "hair": [
+      "long blonde hair", "short blue hair", "twin tails silver hair", "bob cut black hair", "messy red hair", 
+      "pink wavy hair", "white straight hair", "green ponytail", "purple drill curls", "hime cut", "short pixie cut",
+      "gradient hair", "two-tone hair", "bun hair", "side ponytail", "ahoge", "floating hair", "long hair", "short hair", "medium hair"
+    ],
+    "eyes": [
+      "blue eyes", "red eyes", "heterochromia", "green eyes", "golden eyes", "purple eyes",
+      "pink eyes", "grey eyes", "brown eyes", "cat eyes", "sleepy eyes", "tsurime (sharp eyes)",
+      "tareme (droopy eyes)", "glowing eyes", "heart-shaped pupils", "star-shaped pupils"
+    ],
+    "body": [
+      "tall", "petite", "curvy", "slender", "fit body", "thick thighs", "oiled skin",
+      "pale skin", "tanned skin", "dark skin", "soft skin", "muscular", "wide hips",
+      "small breasts", "medium breasts", "large breasts", "huge breasts", "tattoo", "navel piercing"
+    ],
+    "accessories": [
+      "glasses", "choker", "cat ears", "headphones", "pearl necklace", "hair ribbon", "collar",
+      "stud earrings", "hoop earrings", "face mask", "eyepatch", "scarf", "beret", "baseball cap",
+      "wristband", "garter belt", "angel wings", "demon horns", "halo", "flower in hair"
+    ],
+
     "expressions": {
-      "sfw": ["smile"],
-      "nsfw": ["blush"],
-      "extreme": ["ahegao"]
+      "sfw": [
+        "smile", "expressionless", "closed eyes", "looking at viewer", "winking", "embarrassed",
+        "laughing", "pouting", "surprised", "angry", "sad", "confused", "smug", "nervous", "yawning", "serious"
+      ],
+      "nsfw": [
+        "heavy breathing", "blushing", "biting lip", "aroused", "saliva", "sweat",
+        "lewd smile", "panting", "half-closed eyes", "looking down", "moaning", "drunk", "tongue out", "pleasure face", "enduring"
+      ],
+      "extreme": [
+        "empty eyes", "mind break", "ahegao", "rolling eyes", "eyes rolled back",
+        "drooling heavily", "broken expression", "gagged", "hysterical laugh", "foaming mouth", "crying", "despair", "lifeless look", "trance"
+      ]
     },
+
     "clothes_sets": {
-      "sfw": ["uniform"],
-      "nsfw": ["bikini"],
-      "extreme": ["bondage"]
+      "sfw": [
+        "school uniform", "casual hoodie and jeans", "summer dress", "office suit", "kimono", "maid costume", "gym clothes",
+        "nurse uniform", "police uniform", "miko outfit", "cheongsam", "gothic lolita dress", "pajamas", "tracksuit", "winter coat", "yukata", "tennis wear", "cheerleader"
+      ],
+      "nsfw": [
+        "lingerie set", "micro bikini", "naked ribbon", "unbuttoned shirt", "shibari rope", "wet shirt",
+        "apron only", "towel only", "transparent raincoat", "soap bubbles", "body paint", "torn clothes", "slime covered", "latex maid", "slingshot bikini", "school swimsuit"
+      ],
+      "extreme": [
+        "bdsm gear", "leather harness", "latex suit", "full body tights", "mummy bandages",
+        "pet play gear", "shibari suspension", "vacuum bed", "wooden horse", "straitjacket", "gimp suit", "cow print bikini", "chains and collar", "medical restraint"
+      ]
     },
+
     "separates": {
-      "tops": { "sfw": ["shirt"], "nsfw": ["pasties"], "extreme": ["harness"] },
-      "bottoms": { "sfw": ["skirt"], "nsfw": ["no panties"], "extreme": ["chains"] },
-      "underwear": { "sfw": ["panties"], "nsfw": ["thong"], "extreme": ["plug"] }
+      "tops": {
+        "sfw": [
+          "white shirt", "t-shirt", "sweater", "tank top", "leather jacket", "blouse", "crop top",
+          "hoodie", "cardigan", "tube top", "sports bra", "camisole", "turtleneck", "off-shoulder top", "bikini top", "sailor collar", "vest"
+        ],
+        "nsfw": [
+          "topless", "nipple pasties", "see-through shirt", "lifted shirt", "open shirt",
+          "wet t-shirt", "hands covering breasts", "hair covering breasts", "open bra", "torn bra", "micro bra", "latex bra", "chain harness"
+        ],
+        "extreme": [
+          "nipple clamps", "harness", "latex top", "torn shirt",
+          "milking machine", "nipple piercing chain", "tight ropes", "metal collar"
+        ]
+      },
+      "bottoms": {
+        "sfw": [
+          "denim shorts", "pleated skirt", "jeans", "pencil skirt", "leggings", "cargo pants",
+          "mini skirt", "long skirt", "hot pants", "sweatpants", "bloomers", "tights", "pantyhose", "knee socks", "thigh highs", "yoga pants"
+        ],
+        "nsfw": [
+          "bottomless", "no panties", "micro skirt", "pulled down panties",
+          "skirt lift", "crotchless panties", "wet panties", "visible panty line", "cameltoe", "diaper"
+        ],
+        "extreme": [
+          "crotchless pants", "chastity belt", "latex skirt",
+          "tail plug visible", "enema tube", "speculum", "public display"
+        ]
+      },
+      "underwear": {
+        "sfw": [
+          "striped panties", "sports bra", "white panties", "lace underwear", "black panties",
+          "pink panties", "boy shorts", "thong", "fundoshi", "frilled panties", "teddy", "shimapan"
+        ],
+        "nsfw": [
+          "no panties", "crotchless panties", "vibrator", "pearl thong",
+          "vibrator in panties", "wet spot", "removed panties", "panties around ankles"
+        ],
+        "extreme": [
+          "metal plug", "tail plug", "fundoshi",
+          "giant dildo", "double dildo", "anal beads", "fisting", "speculum insertion"
+        ]
+      }
     }
   },
+
   "situations": [
     {
-      "name": "Test Room",
-      "tags": "simple background",
-      "poses": ["standing"],
+      "name": "School Life (SFW)",
+      "tags": "classroom, sunlight through window, school desk, chalkboard",
+      "poses": ["sitting at desk", "writing on notebook", "looking out window", "standing by desk", "sleeping on desk", "talking to friend"],
       "nsfw_level": "sfw"
+    },
+    {
+      "name": "Fantasy Battle (SFW)",
+      "tags": "fantasy ruins, magic circle, holding sword, dynamic angle, explosion background",
+      "poses": ["fighting stance", "casting spell", "jumping attack", "kneeling with sword", "back to back", "aiming bow"],
+      "nsfw_level": "sfw"
+    },
+    {
+      "name": "City Street (SFW)",
+      "tags": "city street, night, neon lights, crowd, rain, umbrella",
+      "poses": ["walking", "standing", "looking back", "holding umbrella", "leaning on railing", "checking phone"],
+      "nsfw_level": "sfw"
+    },
+    {
+      "name": "Cafe Date (SFW)",
+      "tags": "cafe, indoor, coffee cup, table, window view",
+      "poses": ["drinking coffee", "smiling across table", "chin on hands", "eating cake", "looking at menu"],
+      "nsfw_level": "sfw"
+    },
+    {
+      "name": "Gym Workout (SFW)",
+      "tags": "gym, fitness equipment, mirror, sweat, water bottle",
+      "poses": ["stretching", "lifting weights", "squatting", "drinking water", "wiping sweat", "running on treadmill"],
+      "nsfw_level": "sfw"
+    },
+    {
+      "name": "Beach Summer (SFW)",
+      "tags": "beach, ocean, blue sky, white sand, summer sun",
+      "poses": ["running on beach", "playing volleyball", "splashing water", "building sandcastle", "lying on towel"],
+      "nsfw_level": "sfw"
+    },
+    {
+      "name": "Bedroom (NSFW)",
+      "tags": "bedroom, dim lighting, bed sheet, messy room, pillows",
+      "poses": ["lying on bed", "kneeling on bed", "spread legs", "doggystyle", "cowgirl position", "missionary", "grabbing sheets"],
+      "nsfw_level": "nsfw"
+    },
+    {
+      "name": "Onsen (NSFW)",
+      "tags": "hot spring, steam, wet skin, rocks, water, outdoors",
+      "poses": ["sitting in water", "covering breasts", "washing hair", "leaning on rock", "floating", "back view"],
+      "nsfw_level": "nsfw"
+    },
+    {
+      "name": "Changing Room (NSFW)",
+      "tags": "changing room, lockers, bench, mirror, clothes on floor",
+      "poses": ["undressing", "putting on panties", "changing clothes", "accidentally seen", "embarrassed pose"],
+      "nsfw_level": "nsfw"
+    },
+    {
+      "name": "Love Hotel (NSFW)",
+      "tags": "love hotel, round bed, mood lighting, glass wall, jacuzzi",
+      "poses": ["waiting on bed", "inviting pose", "looking in mirror", "on balcony"],
+      "nsfw_level": "nsfw"
+    },
+    {
+      "name": "Crowded Train (Extreme)",
+      "tags": "train interior, crowded train, blurry background, commuters, holding strap",
+      "poses": ["pressed against window", "skirt lift", "molestation", "embarrassed", "covering mouth", "unable to move"],
+      "nsfw_level": "extreme"
+    },
+    {
+      "name": "Public Exposure (Extreme)",
+      "tags": "busy street, crowd, outdoor, public exposure, humiliation",
+      "poses": ["walking naked", "lifting skirt", "flashing", "crying", "covering face", "shibari walk"],
+      "nsfw_level": "extreme"
+    },
+    {
+      "name": "Live Streaming (Extreme)",
+      "tags": "indoor, webcam, ring light, gaming chair, computer screen",
+      "poses": ["showing to camera", "spread legs to camera", "masturbating", "reading chat", "holding toy", "close up to camera"],
+      "nsfw_level": "extreme"
+    },
+    {
+      "name": "Public Toilet (Extreme)",
+      "tags": "public toilet, stall, tiles, dirty mirror, toilet bowl",
+      "poses": ["sitting on toilet", "legs up", "flushed face", "messy clothes", "selfie in mirror"],
+      "nsfw_level": "extreme"
+    },
+    {
+      "name": "School Infirmary (Extreme)",
+      "tags": "school infirmary, bed, curtain, medicine cabinet, quiet",
+      "poses": ["restrained on bed", "legs spread on bed", "being examined", "unconscious", "sleeping"],
+      "nsfw_level": "extreme"
     }
   ],
-  "random_poses": ["standing"]
+
+  "random_poses": [
+    "standing", "sitting", "looking back", "peace sign", "arms crossed", "stretching", "hands on hips", "squatting",
+    "jumping", "kneeling", "lying down", "leaning forward", "hands behind head", "finger to lips", "saluting", "waving hand", "adjusting hair", "selfie pose"
+  ]
 }
