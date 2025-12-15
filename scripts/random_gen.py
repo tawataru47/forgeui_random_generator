@@ -6,58 +6,43 @@ import random
 import os
 import traceback
 import html
-import urllib.parse
+import time
 
 # --- User Setting ---
-# ここで指定したフォルダを起点に再帰的に検索します
 TARGET_LORA_DIR = r"C:\stableDiffusion\stable-diffusion-webui\models\Lora"
 
 # --- JavaScript Logic ---
 JS_SCRIPT = """
 <script>
-    // 1. Text Injection Helper
     function insertTextToPrompt(text) {
         var ta = gradioApp().querySelector('#random_gen_result_box textarea');
         if (!ta) return;
-        
         var currentVal = ta.value;
         var sep = currentVal.trim().length > 0 ? ", " : "";
-        
-        // Reactのstate更新をトリガー
         var nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value").set;
         nativeInputValueSetter.call(ta, currentVal + sep + text);
-        
         ta.dispatchEvent(new Event('input', { bubbles: true }));
     }
 
-    // 2. Global Function for LoRA Click
     window.addLoraToGen = function(element) {
-        // カード要素からデータを取得
         var name = element.getAttribute('data-name');
         var trigger = element.getAttribute('data-trigger');
-        
         var text = "<lora:" + name + ":1>";
-        // トリガーワードが有効な場合のみ追加
         if (trigger && trigger !== "None" && trigger !== "" && trigger !== "null") {
             text += ", " + trigger;
         }
         insertTextToPrompt(text);
     }
 
-    // 3. Send Function
     window.sendPromptTo = function(tabName) {
         var src = gradioApp().querySelector('#random_gen_result_box textarea');
         if (!src) return;
-        
         var targetId = (tabName === 'txt2img') ? '#txt2img_prompt textarea' : '#img2img_prompt textarea';
         var dest = gradioApp().querySelector(targetId);
-        
         if (dest) {
             var nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value").set;
             nativeInputValueSetter.call(dest, src.value);
             dest.dispatchEvent(new Event('input', { bubbles: true }));
-            
-            // Tab切り替え
             var tabIndex = (tabName === 'txt2img') ? 1 : 2; 
             var tab = gradioApp().querySelector('#tabs button:nth-child(' + tabIndex + ')'); 
             if (tab) tab.click();
@@ -66,65 +51,80 @@ JS_SCRIPT = """
 </script>
 """
 
-# --- CSS (Horizontal Layout & Hover) ---
+# --- CSS (強制グリッドレイアウト) ---
 CSS = """
-.lora-tab-container {
-    height: 550px;
+/* コンテナの設定 */
+.rg-lora-container {
+    height: 600px;
     overflow-y: auto;
     padding: 10px;
-    background: var(--background-fill-secondary);
-    border-radius: 8px;
+    background-color: var(--background-fill-primary);
+    border: 1px solid var(--border-color-primary);
+    border-radius: 4px;
 }
-.lora-grid {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 12px;
-    align-content: flex-start;
+
+/* グリッドレイアウトの強制 */
+.rg-lora-grid {
+    display: grid !important;
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)) !important;
+    gap: 10px !important;
+    align-items: start !important;
+    width: 100% !important;
 }
-.lora-card {
-    width: 130px; /* 固定幅で並べる */
+
+/* カードデザイン */
+.rg-lora-card {
     position: relative;
     cursor: pointer;
     border-radius: 8px;
     background: var(--neutral-800);
     border: 1px solid var(--border-color-primary);
-    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-    transition: transform 0.1s, border-color 0.1s;
-    overflow: visible; /* Popup表示のため */
+    overflow: visible; /* ポップアップ用 */
+    transition: transform 0.1s;
     display: flex;
     flex-direction: column;
+    height: 100%;
 }
-.lora-card:hover {
-    transform: translateY(-2px);
+
+.rg-lora-card:hover {
+    transform: scale(1.02);
     border-color: var(--primary-500);
-    z-index: 100;
+    z-index: 10;
 }
-.lora-thumb-wrapper {
+
+/* サムネイル画像エリア */
+.rg-thumb-box {
     width: 100%;
-    height: 195px; /* Civitai縦長比率に合わせる */
+    aspect-ratio: 2/3;
     overflow: hidden;
     border-radius: 8px 8px 0 0;
     background: #222;
     position: relative;
 }
-.lora-thumb {
+
+.rg-thumb-img {
     width: 100%;
     height: 100%;
     object-fit: cover;
+    display: block;
 }
-.lora-no-thumb {
+
+/* 画像なしの場合 */
+.rg-no-thumb {
     width: 100%;
     height: 100%;
     display: flex;
-    flex-direction: column;
     align-items: center;
     justify-content: center;
-    color: #666;
+    color: #555;
+    font-size: 12px;
     text-align: center;
-    font-size: 24px;
-    padding: 5px;
+    padding: 2px;
+    background: #1a1a1a;
 }
-.lora-title {
+
+/* タイトルバー */
+.rg-card-title {
     padding: 6px;
     font-size: 11px;
     font-weight: bold;
@@ -132,62 +132,56 @@ CSS = """
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    background: var(--neutral-900);
+    background: rgba(0,0,0,0.3);
     color: var(--body-text-color);
-    border-radius: 0 0 8px 8px;
-    height: 28px;
+    border-top: 1px solid #333;
 }
 
-/* --- Hover Popup --- */
-.lora-popup {
+/* ホバー時のポップアップ */
+.rg-popup {
     display: none;
     position: absolute;
-    bottom: 95%; /* カードの少し上 */
+    bottom: 100%;
     left: 50%;
-    transform: translate(-50%, 0);
-    width: 280px;
+    transform: translate(-50%, -5px);
+    width: 250px;
     background: rgba(20, 20, 30, 0.98);
     border: 1px solid var(--primary-500);
-    border-radius: 8px;
+    border-radius: 6px;
     padding: 10px;
-    box-shadow: 0 10px 30px rgba(0,0,0,0.8);
-    pointer-events: none; /* マウスイベントを透過（クリック邪魔しない） */
+    box-shadow: 0 5px 20px rgba(0,0,0,0.8);
+    pointer-events: none;
     z-index: 9999;
 }
-.lora-card:hover .lora-popup {
+
+.rg-lora-card:hover .rg-popup {
     display: block;
 }
-.popup-img {
+
+.rg-popup-img {
     width: 100%;
-    max-height: 400px;
+    max-height: 300px;
     object-fit: contain;
     border-radius: 4px;
-    margin-bottom: 8px;
-    background: black;
+    margin-bottom: 5px;
+    background: #000;
 }
-.popup-header {
-    font-size: 13px;
-    font-weight: bold;
-    color: var(--primary-300);
-    margin-bottom: 6px;
-    word-break: break-all;
-    border-bottom: 1px solid #444;
-    padding-bottom: 4px;
-}
-.popup-info {
+
+.rg-popup-text {
     font-size: 11px;
-    color: #ddd;
-    line-height: 1.4;
+    color: #eee;
+    line-height: 1.3;
 }
-.tag-badge {
+
+.rg-badge {
     display: inline-block;
-    background: #333;
-    padding: 2px 6px;
-    border-radius: 4px;
+    background: #444;
+    padding: 2px 5px;
+    border-radius: 3px;
     margin: 2px;
-    font-family: monospace;
-    border: 1px solid #555;
+    border: 1px solid #666;
     color: #8f8;
+    font-family: monospace;
 }
 """
 
@@ -208,17 +202,14 @@ def load_data(file_type="tags"):
             return json.load(f)
     except: return {}
 
-# --- LoRA Scanning & JSON/Preview Logic ---
+# --- LoRA Scanning ---
 def get_lora_library():
     root_path = TARGET_LORA_DIR
-    if not os.path.exists(root_path):
-        return None
+    if not os.path.exists(root_path): return None
 
-    # Structure: { "FolderName": [Items...] }
     library = {}
 
     for root, dirs, files in os.walk(root_path):
-        # フォルダ名の決定
         rel_path = os.path.relpath(root, root_path)
         folder_name = "Root" if rel_path == "." else rel_path
         
@@ -227,10 +218,9 @@ def get_lora_library():
             if file.endswith(".safetensors"):
                 name = os.path.splitext(file)[0]
                 full_path = os.path.join(root, file)
-                base_name_path = os.path.splitext(full_path)[0] # 拡張子なしのフルパス
+                base_name_path = os.path.splitext(full_path)[0]
                 
-                # --- 1. Image Preview 探索 ---
-                # 拡張子リスト (preview.png, png, jpg...)
+                # --- Image Preview (Path Fix) ---
                 preview_file = None
                 for ext in [".preview.png", ".png", ".jpg", ".jpeg", ".webp"]:
                     test_path = base_name_path + ext
@@ -238,46 +228,33 @@ def get_lora_library():
                         preview_file = test_path
                         break
                 
-                # WebUI用URL変換 (/file=C:/Path/To/Image.png)
-                # バックスラッシュをスラッシュに置換するだけで大抵動きます
                 img_url = None
                 if preview_file:
+                    # 【修正】URLエンコードをやめ、バックスラッシュをスラッシュに変えるだけにします
+                    # Forgeの /file= エンドポイントはこれで通るはずです
                     clean_path = preview_file.replace("\\", "/")
-                    img_url = f"/file={clean_path}"
+                    # 念のためタイムスタンプを付けてキャッシュを回避
+                    ts = os.path.getmtime(preview_file)
+                    img_url = f"/file={clean_path}?t={ts}"
 
-                # --- 2. Metadata (JSON) 探索 ---
+                # --- Metadata (JSON) ---
                 triggers = []
-                
-                # あなたのJSON形式を優先 (.json の activation text)
                 json_path = base_name_path + ".json"
                 civitai_path = base_name_path + ".civitai.info"
                 
-                # どちらのファイルが存在するか確認
-                target_meta_path = None
-                if os.path.exists(json_path):
-                    target_meta_path = json_path
-                elif os.path.exists(civitai_path):
-                    target_meta_path = civitai_path
+                target_meta = None
+                if os.path.exists(json_path): target_meta = json_path
+                elif os.path.exists(civitai_path): target_meta = civitai_path
                 
-                if target_meta_path:
+                if target_meta:
                     try:
-                        with open(target_meta_path, "r", encoding="utf-8") as f:
+                        with open(target_meta, "r", encoding="utf-8") as f:
                             meta = json.load(f)
-                            
-                            # Case A: 提示されたJSON形式 ("activation text")
-                            if "activation text" in meta:
-                                txt = meta["activation text"]
-                                if txt: triggers.append(txt)
-                                
-                            # Case B: Civitai形式 ("trainedWords")
-                            if not triggers and "trainedWords" in meta and meta["trainedWords"]:
-                                triggers = meta["trainedWords"]
-                                
-                            # Case C: その他 ("trigger", "trigger_words")
-                            if not triggers:
-                                if "trigger" in meta: triggers = [meta["trigger"]]
-                                elif "trigger_words" in meta: triggers = meta["trigger_words"]
-                                
+                            if "activation text" in meta and meta["activation text"]:
+                                triggers.append(meta["activation text"])
+                            if "trainedWords" in meta and meta["trainedWords"]:
+                                for t in meta["trainedWords"]:
+                                    if t not in triggers: triggers.append(t)
                     except: pass
                 
                 trigger_text = ", ".join(triggers) if triggers else ""
@@ -286,64 +263,61 @@ def get_lora_library():
                     "name": name,
                     "image": img_url,
                     "triggers": triggers,
-                    "trigger_text": trigger_text
+                    "trigger_text": trigger_text,
+                    "debug_path": preview_file # デバッグ用に元のパスを保持
                 })
         
         if lora_list:
             lora_list.sort(key=lambda x: x["name"].lower())
             library[folder_name] = lora_list
             
-    # ソートしてRootを先頭に
     sorted_lib = {}
     if "Root" in library: sorted_lib["Root"] = library.pop("Root")
     for k in sorted(library.keys()): sorted_lib[k] = library[k]
-        
     return sorted_lib
 
 def make_html_for_loras(lora_list):
     if not lora_list: return "<div style='padding:20px'>No LoRAs found.</div>"
     
-    html_out = "<div class='lora-grid'>"
+    html_out = "<div class='rg-lora-grid'>"
     for lora in lora_list:
         name = html.escape(lora["name"])
         trigger_safe = html.escape(lora["trigger_text"]).replace("'", "\\'")
         
-        # Image Tag
+        # Image Logic
         if lora["image"]:
-            # 画像パスをそのままsrcに入れる
-            img_html = f"<img src='{lora['image']}' class='lora-thumb' loading='lazy' onerror=\"this.style.display='none';this.nextElementSibling.style.display='flex'\" >"
-            # フォールバック用のNO IMAGE表示（画像ロード失敗時用）
-            fallback_html = f"<div class='lora-no-thumb' style='display:none'><span>Img Error</span></div>"
-            img_combo = img_html + fallback_html
-            
-            popup_img = f"<img src='{lora['image']}' class='popup-img'>"
+            # 画像がある場合
+            img_html = f"""
+            <img src='{lora['image']}' class='rg-thumb-img' loading='lazy' 
+                 onerror="this.style.display='none'; this.nextElementSibling.style.display='flex'">
+            <div class='rg-no-thumb' style='display:none'>
+                <span>Img Error</span>
+            </div>
+            """
+            popup_img = f"<img src='{lora['image']}' class='rg-popup-img'>"
         else:
-            img_combo = f"<div class='lora-no-thumb'><span>NO IMAGE</span></div>"
+            # 画像がない場合
+            img_html = f"<div class='rg-no-thumb'><span>NO IMAGE</span></div>"
             popup_img = ""
             
-        # Trigger Badges
-        trigger_html = ""
+        # Triggers
         if lora["triggers"]:
-            for t in lora["triggers"]:
-                trigger_html += f"<span class='tag-badge'>{html.escape(t)}</span>"
+            t_html = "".join([f"<span class='rg-badge'>{html.escape(t)}</span>" for t in lora["triggers"]])
         else:
-            trigger_html = "<span style='color:#777; font-style:italic;'>No triggers found in .json</span>"
+            t_html = "<span style='color:#777; font-style:italic;'>No triggers</span>"
 
-        # HTML Assembly
-        # data-name と data-trigger 属性にデータを埋め込む
+        # Card HTML
         card = f"""
-        <div class='lora-card' onclick="addLoraToGen(this)" data-name="{name}" data-trigger="{trigger_safe}">
-            <div class='lora-thumb-wrapper'>
-                {img_combo}
+        <div class='rg-lora-card' onclick="addLoraToGen(this)" data-name="{name}" data-trigger="{trigger_safe}" title="{name}">
+            <div class='rg-thumb-box'>
+                {img_html}
             </div>
-            <div class='lora-title'>{name}</div>
+            <div class='rg-card-title'>{name}</div>
             
-            <div class='lora-popup'>
-                <div class='popup-header'>{name}</div>
+            <div class='rg-popup'>
+                <div style='font-weight:bold; color:#f88; margin-bottom:4px;'>{name}</div>
                 {popup_img}
-                <div class='popup-info'>
-                    {trigger_html}
-                </div>
+                <div class='rg-popup-text'>{t_html}</div>
             </div>
         </div>
         """
@@ -416,8 +390,6 @@ def load_prompt_action(name):
 def on_ui_tabs():
     saved_data = load_data("saved")
     saved_choices = list(saved_data.keys()) if saved_data else []
-    
-    # LoRAスキャン
     lora_lib = get_lora_library()
 
     with gr.Blocks(analytics_enabled=False, css=CSS) as ui:
@@ -426,7 +398,7 @@ def on_ui_tabs():
         with gr.Row():
             # LEFT
             with gr.Column(scale=1, min_width=300):
-                gr.Markdown("### 🎲 Random Gen v2.1")
+                gr.Markdown("### 🎲 Random Gen v2.2")
                 with gr.Group():
                     gen_mode = gr.Radio(["Context-Aware (状況に合わせる)", "Random Chaos (完全ランダム)"], label="Mode", value="Context-Aware (状況に合わせる)")
                     cloth_mode = gr.Radio(["Full Set (全身セット)", "Mix & Match (パーツ別ランダム)"], label="Outfit", value="Full Set (全身セット)")
@@ -451,18 +423,18 @@ def on_ui_tabs():
                     btn_txt = gr.Button("👉 Send to txt2img")
                     btn_img = gr.Button("👉 Send to img2img")
 
-                # --- LoRA Browser with Tabs ---
+                # --- LoRA Browser ---
                 gr.Markdown("### 🧬 LoRA Library")
                 
                 if lora_lib:
                     with gr.Tabs():
                         for folder, items in lora_lib.items():
                             with gr.TabItem(label=f"{folder} ({len(items)})"):
-                                with gr.Column(elem_classes=["lora-tab-container"]):
-                                    # HTML生成
+                                # クラス名を更新 (rg-lora-container)
+                                with gr.Column(elem_classes=["rg-lora-container"]):
                                     gr.HTML(make_html_for_loras(items))
                 else:
-                    gr.Markdown(f"**Error:** LoRA folder not found or empty at `{TARGET_LORA_DIR}`.")
+                    gr.Markdown(f"**Error:** LoRA folder not found at `{TARGET_LORA_DIR}`.")
 
         # Events
         btn_gen.click(fn=generate_prompt_logic, inputs=[gen_mode, cloth_mode, nsfw, extreme, quality], outputs=[output_box])
