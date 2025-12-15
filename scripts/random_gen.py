@@ -356,4 +356,66 @@ def generate_prompt_logic(gen_mode, clothing_mode, is_nsfw, is_extreme, use_qual
         return final
     except Exception as e: return str(e)
 
-def s
+def save_prompt_action(name, prompt):
+    if not name: return gr.update(), "Error: No Name"
+    d = load_data("saved")
+    d[name] = prompt
+    with open(get_paths()["saved"], "w", encoding="utf-8") as f:
+        json.dump(d, f, indent=2, ensure_ascii=False)
+    return gr.update(choices=list(d.keys())), f"Saved: {name}"
+
+def load_prompt_action(name):
+    return load_data("saved").get(name, "")
+
+# --- UI Builder ---
+def on_ui_tabs():
+    saved_data = load_data("saved")
+    saved_choices = list(saved_data.keys()) if saved_data else []
+    lora_lib = get_lora_library()
+
+    with gr.Blocks(analytics_enabled=False, css=CSS) as ui:
+        gr.HTML(visible=False, value=JS_SCRIPT)
+
+        with gr.Row():
+            with gr.Column(scale=1, min_width=300):
+                gr.Markdown("### 🎲 Random Gen v2.5")
+                with gr.Group():
+                    gen_mode = gr.Radio(["Context-Aware (状況に合わせる)", "Random Chaos (完全ランダム)"], label="Mode", value="Context-Aware (状況に合わせる)")
+                    cloth_mode = gr.Radio(["Full Set (全身セット)", "Mix & Match (パーツ別ランダム)"], label="Outfit", value="Full Set (全身セット)")
+                    with gr.Row():
+                        nsfw = gr.Checkbox(label="🔞 NSFW", value=False)
+                        extreme = gr.Checkbox(label="🔥 Extreme", value=False)
+                    quality = gr.Checkbox(label="Quality Tags", value=True)
+                btn_gen = gr.Button("🎲 GENERATE", variant="primary", size="lg")
+                gr.Markdown("---")
+                with gr.Group():
+                    saved_dd = gr.Dropdown(label="Load", choices=saved_choices)
+                    save_name = gr.Textbox(label="Name", placeholder="Save name...")
+                    btn_save = gr.Button("Save")
+                    save_msg = gr.Markdown("")
+
+            with gr.Column(scale=2):
+                output_box = gr.Textbox(label="Prompt", lines=4, interactive=True, elem_id="random_gen_result_box", show_copy_button=True)
+                with gr.Row():
+                    btn_txt = gr.Button("👉 Send to txt2img")
+                    btn_img = gr.Button("👉 Send to img2img")
+
+                gr.Markdown("### 🧬 LoRA Library")
+                if lora_lib:
+                    with gr.Tabs():
+                        for folder, items in lora_lib.items():
+                            with gr.TabItem(label=f"{folder} ({len(items)})"):
+                                with gr.Column(elem_classes=["rg-lora-container"]):
+                                    gr.HTML(make_html_for_loras(items))
+                else:
+                    gr.Markdown(f"**Error:** LoRA folder not found at `{TARGET_LORA_DIR}`.")
+
+        btn_gen.click(fn=generate_prompt_logic, inputs=[gen_mode, cloth_mode, nsfw, extreme, quality], outputs=[output_box])
+        btn_save.click(fn=save_prompt_action, inputs=[save_name, output_box], outputs=[saved_dd, save_msg])
+        saved_dd.change(fn=load_prompt_action, inputs=[saved_dd], outputs=[output_box])
+        btn_txt.click(fn=None, _js='() => window.sendPromptTo("txt2img")')
+        btn_img.click(fn=None, _js='() => window.sendPromptTo("img2img")')
+
+    return [(ui, "Random Gen", "random_gen_tab")]
+
+script_callbacks.on_ui_tabs(on_ui_tabs)
