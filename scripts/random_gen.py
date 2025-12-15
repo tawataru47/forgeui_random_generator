@@ -23,7 +23,7 @@ JS_SCRIPT = """
         var currentVal = ta.value;
         var sep = currentVal.trim().length > 0 ? ", " : "";
         
-        // Reactのstate更新をトリガーするために setter を呼ぶ
+        // Reactのstate更新をトリガー
         var nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value").set;
         nativeInputValueSetter.call(ta, currentVal + sep + text);
         
@@ -32,11 +32,13 @@ JS_SCRIPT = """
 
     // 2. Global Function for LoRA Click
     window.addLoraToGen = function(element) {
+        // カード要素からデータを取得
         var name = element.getAttribute('data-name');
         var trigger = element.getAttribute('data-trigger');
         
         var text = "<lora:" + name + ":1>";
-        if (trigger && trigger !== "None" && trigger !== "") {
+        // トリガーワードが有効な場合のみ追加
+        if (trigger && trigger !== "None" && trigger !== "" && trigger !== "null") {
             text += ", " + trigger;
         }
         insertTextToPrompt(text);
@@ -64,7 +66,7 @@ JS_SCRIPT = """
 </script>
 """
 
-# --- CSS (Prompt-all-in-one 風スタイル) ---
+# --- CSS (Horizontal Layout & Hover) ---
 CSS = """
 .lora-tab-container {
     height: 550px;
@@ -74,11 +76,13 @@ CSS = """
     border-radius: 8px;
 }
 .lora-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    display: flex;
+    flex-wrap: wrap;
     gap: 12px;
+    align-content: flex-start;
 }
 .lora-card {
+    width: 130px; /* 固定幅で並べる */
     position: relative;
     cursor: pointer;
     border-radius: 8px;
@@ -87,6 +91,8 @@ CSS = """
     box-shadow: 0 2px 4px rgba(0,0,0,0.2);
     transition: transform 0.1s, border-color 0.1s;
     overflow: visible; /* Popup表示のため */
+    display: flex;
+    flex-direction: column;
 }
 .lora-card:hover {
     transform: translateY(-2px);
@@ -95,10 +101,11 @@ CSS = """
 }
 .lora-thumb-wrapper {
     width: 100%;
-    aspect-ratio: 2/3;
+    height: 195px; /* Civitai縦長比率に合わせる */
     overflow: hidden;
     border-radius: 8px 8px 0 0;
     background: #222;
+    position: relative;
 }
 .lora-thumb {
     width: 100%;
@@ -115,6 +122,7 @@ CSS = """
     color: #666;
     text-align: center;
     font-size: 24px;
+    padding: 5px;
 }
 .lora-title {
     padding: 6px;
@@ -127,22 +135,23 @@ CSS = """
     background: var(--neutral-900);
     color: var(--body-text-color);
     border-radius: 0 0 8px 8px;
+    height: 28px;
 }
 
-/* --- Hover Popup (PAIO Style) --- */
+/* --- Hover Popup --- */
 .lora-popup {
     display: none;
     position: absolute;
-    bottom: 100%;
+    bottom: 95%; /* カードの少し上 */
     left: 50%;
-    transform: translate(-50%, -10px);
-    width: 260px;
+    transform: translate(-50%, 0);
+    width: 280px;
     background: rgba(20, 20, 30, 0.98);
     border: 1px solid var(--primary-500);
     border-radius: 8px;
     padding: 10px;
     box-shadow: 0 10px 30px rgba(0,0,0,0.8);
-    pointer-events: none;
+    pointer-events: none; /* マウスイベントを透過（クリック邪魔しない） */
     z-index: 9999;
 }
 .lora-card:hover .lora-popup {
@@ -150,7 +159,7 @@ CSS = """
 }
 .popup-img {
     width: 100%;
-    max-height: 350px;
+    max-height: 400px;
     object-fit: contain;
     border-radius: 4px;
     margin-bottom: 8px;
@@ -199,13 +208,11 @@ def load_data(file_type="tags"):
             return json.load(f)
     except: return {}
 
-# --- LoRA Scanning & Civitai Helper Logic ---
+# --- LoRA Scanning & JSON/Preview Logic ---
 def get_lora_library():
     root_path = TARGET_LORA_DIR
     if not os.path.exists(root_path):
-        # パスが見つからない場合は相対パスを試す
-        root_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "models", "Lora"))
-        if not os.path.exists(root_path): return None
+        return None
 
     # Structure: { "FolderName": [Items...] }
     library = {}
@@ -222,8 +229,8 @@ def get_lora_library():
                 full_path = os.path.join(root, file)
                 base_name_path = os.path.splitext(full_path)[0] # 拡張子なしのフルパス
                 
-                # --- 1. Image Preview ---
-                # Civitai Helper等は .preview.png, .png, .jpg などを保存する
+                # --- 1. Image Preview 探索 ---
+                # 拡張子リスト (preview.png, png, jpg...)
                 preview_file = None
                 for ext in [".preview.png", ".png", ".jpg", ".jpeg", ".webp"]:
                     test_path = base_name_path + ext
@@ -231,36 +238,46 @@ def get_lora_library():
                         preview_file = test_path
                         break
                 
-                # Gradio/WebUI用にパスをエンコード (/file=C:/...)
+                # WebUI用URL変換 (/file=C:/Path/To/Image.png)
+                # バックスラッシュをスラッシュに置換するだけで大抵動きます
                 img_url = None
                 if preview_file:
-                    # Windowsのバックスラッシュを置換し、URLエンコード
-                    safe_path = urllib.parse.quote(preview_file.replace("\\", "/"))
-                    # ドライブレターのコロン(:)などは quote でエンコードされるが、
-                    # /file= エンドポイントはそれをデコードして読む
-                    img_url = f"/file={preview_file}" 
+                    clean_path = preview_file.replace("\\", "/")
+                    img_url = f"/file={clean_path}"
 
-                # --- 2. Civitai Info Parsing ---
-                # .civitai.info を優先、なければ .json
+                # --- 2. Metadata (JSON) 探索 ---
                 triggers = []
-                info_path = base_name_path + ".civitai.info"
-                if not os.path.exists(info_path):
-                    info_path = base_name_path + ".json"
                 
-                if os.path.exists(info_path):
+                # あなたのJSON形式を優先 (.json の activation text)
+                json_path = base_name_path + ".json"
+                civitai_path = base_name_path + ".civitai.info"
+                
+                # どちらのファイルが存在するか確認
+                target_meta_path = None
+                if os.path.exists(json_path):
+                    target_meta_path = json_path
+                elif os.path.exists(civitai_path):
+                    target_meta_path = civitai_path
+                
+                if target_meta_path:
                     try:
-                        with open(info_path, "r", encoding="utf-8") as f:
+                        with open(target_meta_path, "r", encoding="utf-8") as f:
                             meta = json.load(f)
-                            # Civitai Helper形式 (trainedWords)
-                            if "trainedWords" in meta and meta["trainedWords"]:
+                            
+                            # Case A: 提示されたJSON形式 ("activation text")
+                            if "activation text" in meta:
+                                txt = meta["activation text"]
+                                if txt: triggers.append(txt)
+                                
+                            # Case B: Civitai形式 ("trainedWords")
+                            if not triggers and "trainedWords" in meta and meta["trainedWords"]:
                                 triggers = meta["trainedWords"]
-                            # WebUI metadata editor形式 (activation text)
-                            elif "activation text" in meta:
-                                t = meta["activation text"]
-                                if t: triggers = [t]
-                            # Prompt-all-in-one形式
-                            elif "trigger" in meta:
-                                triggers = [meta["trigger"]]
+                                
+                            # Case C: その他 ("trigger", "trigger_words")
+                            if not triggers:
+                                if "trigger" in meta: triggers = [meta["trigger"]]
+                                elif "trigger_words" in meta: triggers = meta["trigger_words"]
+                                
                     except: pass
                 
                 trigger_text = ", ".join(triggers) if triggers else ""
@@ -291,12 +308,17 @@ def make_html_for_loras(lora_list):
         name = html.escape(lora["name"])
         trigger_safe = html.escape(lora["trigger_text"]).replace("'", "\\'")
         
-        # Image
+        # Image Tag
         if lora["image"]:
-            img_html = f"<img src='{lora['image']}' class='lora-thumb' loading='lazy'>"
+            # 画像パスをそのままsrcに入れる
+            img_html = f"<img src='{lora['image']}' class='lora-thumb' loading='lazy' onerror=\"this.style.display='none';this.nextElementSibling.style.display='flex'\" >"
+            # フォールバック用のNO IMAGE表示（画像ロード失敗時用）
+            fallback_html = f"<div class='lora-no-thumb' style='display:none'><span>Img Error</span></div>"
+            img_combo = img_html + fallback_html
+            
             popup_img = f"<img src='{lora['image']}' class='popup-img'>"
         else:
-            img_html = f"<div class='lora-no-thumb'>💊</div>"
+            img_combo = f"<div class='lora-no-thumb'><span>NO IMAGE</span></div>"
             popup_img = ""
             
         # Trigger Badges
@@ -305,13 +327,14 @@ def make_html_for_loras(lora_list):
             for t in lora["triggers"]:
                 trigger_html += f"<span class='tag-badge'>{html.escape(t)}</span>"
         else:
-            trigger_html = "<span style='color:#777; font-style:italic;'>No trigger words detected</span>"
+            trigger_html = "<span style='color:#777; font-style:italic;'>No triggers found in .json</span>"
 
         # HTML Assembly
+        # data-name と data-trigger 属性にデータを埋め込む
         card = f"""
         <div class='lora-card' onclick="addLoraToGen(this)" data-name="{name}" data-trigger="{trigger_safe}">
             <div class='lora-thumb-wrapper'>
-                {img_html}
+                {img_combo}
             </div>
             <div class='lora-title'>{name}</div>
             
@@ -403,7 +426,7 @@ def on_ui_tabs():
         with gr.Row():
             # LEFT
             with gr.Column(scale=1, min_width=300):
-                gr.Markdown("### 🎲 Random Gen v2.0")
+                gr.Markdown("### 🎲 Random Gen v2.1")
                 with gr.Group():
                     gen_mode = gr.Radio(["Context-Aware (状況に合わせる)", "Random Chaos (完全ランダム)"], label="Mode", value="Context-Aware (状況に合わせる)")
                     cloth_mode = gr.Radio(["Full Set (全身セット)", "Mix & Match (パーツ別ランダム)"], label="Outfit", value="Full Set (全身セット)")
@@ -429,7 +452,7 @@ def on_ui_tabs():
                     btn_img = gr.Button("👉 Send to img2img")
 
                 # --- LoRA Browser with Tabs ---
-                gr.Markdown("### 🧬 LoRA Library (Civitai Helper Integrated)")
+                gr.Markdown("### 🧬 LoRA Library")
                 
                 if lora_lib:
                     with gr.Tabs():
