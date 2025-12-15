@@ -7,29 +7,26 @@ import os
 import traceback
 import html
 import glob
+from pathlib import Path
+
+# --- User Setting: LoRA Folder Path ---
+# 指定されたパスを優先し、無ければ相対パスを探します
+TARGET_LORA_DIR = r"C:\stableDiffusion\stable-diffusion-webui\models\Lora"
 
 # --- JavaScript Logic ---
-# LoRAクリック時の処理と、SendToボタンの処理
 JS_SCRIPT = """
 async (x) => {
-    // ------------------------------------------------
     // 1. Text Injection Helper
-    // ------------------------------------------------
     function insertText(text) {
         var ta = gradioApp().querySelector('#random_gen_result_box textarea');
         if (!ta) return;
         
-        // 既にテキストがある場合はカンマを追加
         var sep = ta.value.trim().length > 0 ? ", " : "";
         ta.value = ta.value + sep + text;
-        
-        // React/Gradioに通知
         ta.dispatchEvent(new Event('input', { bubbles: true }));
     }
 
-    // ------------------------------------------------
-    // 2. Global Function for LoRA Click (called from HTML)
-    // ------------------------------------------------
+    // 2. Global Function for LoRA Click
     window.addLoraToGen = function(name, trigger) {
         var text = "<lora:" + name + ":1>";
         if (trigger && trigger !== "None" && trigger !== "") {
@@ -38,9 +35,7 @@ async (x) => {
         insertText(text);
     }
 
-    // ------------------------------------------------
     // 3. Send To Buttons Logic
-    // ------------------------------------------------
     if (x === "send_txt") {
         var dest = gradioApp().querySelector('#txt2img_prompt textarea');
         var src = gradioApp().querySelector('#random_gen_result_box textarea');
@@ -64,89 +59,106 @@ async (x) => {
 }
 """
 
-# --- CSS for LoRA Grid ---
+# --- CSS for Horizontal Grid & Tabs ---
 CSS = """
-.lora-container {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
-    gap: 8px;
-    max-height: 400px;
+.lora-tab-container {
+    height: 500px;
     overflow-y: auto;
-    padding: 8px;
-    background: var(--background-fill-primary);
-    border: 1px solid var(--border-color-primary);
-    border-radius: 8px;
+    padding-right: 5px;
+}
+.lora-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+    gap: 8px;
+    padding: 4px;
 }
 .lora-card {
     position: relative;
     cursor: pointer;
-    border-radius: 6px;
-    overflow: visible; /* Popupのためにvisible */
+    border-radius: 8px;
     background: var(--neutral-800);
-    transition: transform 0.1s;
+    border: 1px solid var(--border-color-primary);
+    overflow: visible;
+    transition: transform 0.1s, box-shadow 0.1s;
 }
 .lora-card:hover {
-    z-index: 100; /* ホバー時は一番上に */
+    transform: scale(1.02);
+    z-index: 50;
+    border-color: var(--primary-500);
+}
+.lora-thumb-container {
+    width: 100%;
+    aspect-ratio: 2/3; /* Civitai standard portrait */
+    overflow: hidden;
+    border-radius: 8px 8px 0 0;
+    background: #333;
 }
 .lora-thumb {
     width: 100%;
-    height: 100px;
+    height: 100%;
     object-fit: cover;
-    border-radius: 6px;
-    display: block;
 }
 .lora-no-thumb {
     width: 100%;
-    height: 100px;
-    background: linear-gradient(45deg, #333, #555);
+    height: 100%;
     display: flex;
     align-items: center;
     justify-content: center;
-    color: #aaa;
-    font-size: 10px;
-    border-radius: 6px;
+    color: #888;
+    font-size: 24px;
 }
+.lora-name-bar {
+    padding: 4px 6px;
+    font-size: 11px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    background: rgba(0,0,0,0.2);
+    color: var(--body-text-color);
+    text-align: center;
+}
+
 /* --- Hover Popup Info --- */
 .lora-info-popup {
     display: none;
     position: absolute;
-    top: -10px;
+    bottom: 100%; /* Show above the card */
     left: 50%;
-    transform: translate(-50%, -100%);
-    width: 200px;
-    background: rgba(0, 0, 0, 0.9);
+    transform: translate(-50%, -10px);
+    width: 220px;
+    background: rgba(20, 20, 20, 0.95);
     border: 1px solid var(--primary-500);
     color: white;
-    padding: 8px;
+    padding: 10px;
     border-radius: 8px;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+    box-shadow: 0 5px 15px rgba(0,0,0,0.5);
     pointer-events: none;
-    z-index: 999;
+    z-index: 100;
 }
 .lora-card:hover .lora-info-popup {
     display: block;
 }
-.popup-img {
+.popup-img-large {
     width: 100%;
     height: auto;
     border-radius: 4px;
-    margin-bottom: 4px;
+    margin-bottom: 6px;
 }
-.popup-name {
+.popup-title {
     font-weight: bold;
-    font-size: 12px;
+    font-size: 13px;
     color: var(--primary-400);
-    margin-bottom: 2px;
-    word-break: break-all;
+    margin-bottom: 4px;
+    word-wrap: break-word;
 }
-.popup-trigger {
-    font-size: 10px;
-    color: #ddd;
-    line-height: 1.2;
+.popup-meta {
+    font-size: 11px;
+    color: #ccc;
+    line-height: 1.3;
 }
 """
 
-# --- File Paths & Data Loading ---
+# --- Data Loading ---
 def get_paths():
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     return {
@@ -163,237 +175,264 @@ def load_data(file_type="tags"):
             return json.load(f)
     except: return {}
 
-# --- LoRA Scanning Logic ---
-def get_lora_list(search_query=""):
-    lora_dir = shared.cmd_opts.lora_dir
-    if not lora_dir:
-        return []
+# --- LoRA Logic ---
+def find_lora_dir():
+    # 1. User defined path
+    if os.path.exists(TARGET_LORA_DIR):
+        return TARGET_LORA_DIR
+    
+    # 2. Forge standard relative path
+    base_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "models", "Lora"))
+    if os.path.exists(base_path):
+        return base_path
+        
+    return None
 
-    loras = []
-    # 再帰的に検索
-    for root, dirs, files in os.walk(lora_dir):
+def get_lora_structure():
+    root_path = find_lora_dir()
+    if not root_path:
+        return None
+
+    # Structure: {'Folder Name': [ {name, image, triggers}, ... ]}
+    structure = {}
+    
+    # Walk through directory
+    for root, dirs, files in os.walk(root_path):
+        # Get folder name relative to Lora root
+        rel_path = os.path.relpath(root, root_path)
+        if rel_path == ".":
+            folder_name = "Root (Uncategorized)"
+        else:
+            folder_name = rel_path
+            
+        lora_list = []
+        
         for file in files:
             if file.endswith(".safetensors"):
                 name = os.path.splitext(file)[0]
                 full_path = os.path.join(root, file)
-                
-                # 検索フィルタ
-                if search_query and search_query.lower() not in name.lower():
-                    continue
-
-                # プレビュー画像の検索 (同名.png, .preview.png, .jpg等)
                 base_name = os.path.splitext(full_path)[0]
+                
+                # --- Find Preview Image ---
+                # Search for: .preview.png, .png, .jpg, .jpeg, .webp
                 preview_path = None
-                for ext in [".png", ".preview.png", ".jpg", ".jpeg", ".webp"]:
-                    if os.path.exists(base_name + ext):
-                        preview_path = base_name + ext
+                for ext in [".preview.png", ".png", ".jpg", ".jpeg", ".webp"]:
+                    test_path = base_name + ext
+                    if os.path.exists(test_path):
+                        preview_path = test_path
                         break
                 
-                # トリガーワードの検索 (.civitai.info or .json)
-                triggers = ""
-                json_path = base_name + ".civitai.info"
-                if not os.path.exists(json_path):
-                    json_path = base_name + ".json"
-                
-                if os.path.exists(json_path):
-                    try:
-                        with open(json_path, "r", encoding="utf-8") as f:
-                            meta = json.load(f)
-                            # Civitai形式の場合
-                            if "trainedWords" in meta and meta["trainedWords"]:
-                                triggers = ", ".join(meta["trainedWords"])
-                            # 単純なJSONの場合 (optional)
-                            elif "activation text" in meta:
-                                triggers = meta["activation text"]
-                    except: pass
-
-                # 画像パスをGradio用に変換 (/file=path)
                 img_url = f"/file={preview_path}" if preview_path else None
                 
-                loras.append({
+                # --- Find Metadata (Civitai Helper) ---
+                # Search for: .civitai.info, .json
+                triggers = []
+                
+                # 1. Try .civitai.info (Best source)
+                meta_path = base_name + ".civitai.info"
+                if not os.path.exists(meta_path):
+                    meta_path = base_name + ".json"
+                
+                if os.path.exists(meta_path):
+                    try:
+                        with open(meta_path, "r", encoding="utf-8") as f:
+                            meta = json.load(f)
+                            # Civitai format
+                            if "trainedWords" in meta and meta["trainedWords"]:
+                                triggers = meta["trainedWords"]
+                            # Other formats
+                            elif "activation text" in meta:
+                                triggers = [meta["activation text"]]
+                    except: pass
+                
+                trigger_text = ", ".join(triggers) if triggers else ""
+
+                lora_list.append({
                     "name": name,
                     "image": img_url,
-                    "triggers": triggers
+                    "trigger": trigger_text
                 })
+        
+        if lora_list:
+            # Sort by name
+            lora_list.sort(key=lambda x: x["name"])
+            structure[folder_name] = lora_list
+            
+    # Sort folders (Root first, then alphabetical)
+    sorted_structure = {}
+    if "Root (Uncategorized)" in structure:
+        sorted_structure["Root (Uncategorized)"] = structure.pop("Root (Uncategorized)")
     
-    return sorted(loras, key=lambda x: x["name"])
+    for k in sorted(structure.keys()):
+        sorted_structure[k] = structure[k]
+        
+    return sorted_structure
 
-def make_lora_html(search_text=""):
-    loras = get_lora_list(search_text)
+def make_html_for_loras(lora_list):
+    if not lora_list: return "<div>No LoRAs found.</div>"
     
-    if not loras:
-        return "<div style='padding:10px;'>No LoRAs found. Check your folder or search query.</div>"
-
-    html_content = "<div class='lora-container'>"
-    
-    for lora in loras:
+    html_content = "<div class='lora-grid'>"
+    for lora in lora_list:
         name = html.escape(lora["name"])
-        trigger_raw = lora["triggers"]
-        trigger_safe = html.escape(trigger_raw).replace("'", "\\'") # JS用にエスケープ
+        trigger_raw = lora["trigger"]
+        trigger_safe = html.escape(trigger_raw).replace("'", "\\'")
         
         img_tag = ""
+        popup_img = ""
         if lora["image"]:
             img_tag = f"<img src='{lora['image']}' class='lora-thumb' loading='lazy'>"
-            popup_img = f"<img src='{lora['image']}' class='popup-img'>"
+            popup_img = f"<img src='{lora['image']}' class='popup-img-large'>"
         else:
-            img_tag = f"<div class='lora-no-thumb'>{name[:10]}..</div>"
-            popup_img = ""
-
-        # ポップアップ情報の構築
-        popup_info = f"""
+            img_tag = f"<div class='lora-no-thumb'>💊</div>"
+        
+        popup = f"""
         <div class='lora-info-popup'>
             {popup_img}
-            <div class='popup-name'>{name}</div>
-            <div class='popup-trigger'>Run: &lt;lora:{name}:1&gt;<br>Trigger: {trigger_safe[:100]}{'...' if len(trigger_safe)>100 else ''}</div>
+            <div class='popup-title'>{name}</div>
+            <div class='popup-meta'>
+                <b>Trigger:</b> {trigger_safe if trigger_safe else 'None'}<br>
+                <span style='opacity:0.7'>Click to add</span>
+            </div>
         </div>
         """
-
-        # カード本体
+        
         card = f"""
-        <div class='lora-card' onclick="addLoraToGen('{name}', '{trigger_safe}')">
-            {img_tag}
-            {popup_info}
+        <div class='lora-card' onclick="addLoraToGen('{name}', '{trigger_safe}')" title='{name}'>
+            <div class='lora-thumb-container'>{img_tag}</div>
+            <div class='lora-name-bar'>{name}</div>
+            {popup}
         </div>
         """
         html_content += card
-
+        
     html_content += "</div>"
     return html_content
 
-# --- Generation Logic (Same as before) ---
+# --- Generator Logic (Standard) ---
 def generate_prompt_logic(gen_mode, clothing_mode, is_nsfw, is_extreme, use_quality):
     try:
         data = load_data("tags")
-        if not data: return "Error: Could not load data."
+        if not data: return "Error: Data load failed."
         prompts = []
         
         if "appearance" in data:
             app = data["appearance"]
-            if "hair_texture" in app: prompts.append(random.choice(app["hair_texture"]))
-            if "hair" in app: prompts.append(random.choice(app["hair"]))
-            if "eyes" in app: prompts.append(random.choice(app["eyes"]))
-            if "body" in app: prompts.append(random.choice(app["body"]))
+            for k in ["hair_texture", "hair", "eyes", "body"]:
+                if k in app: prompts.append(random.choice(app[k]))
+            
             if "expressions" in app:
-                expr_list = list(app["expressions"]["sfw"])
-                if is_nsfw: expr_list += app["expressions"]["nsfw"]
-                if is_extreme: expr_list += app["expressions"]["extreme"]
-                prompts.append(random.choice(expr_list))
+                expr = list(app["expressions"]["sfw"])
+                if is_nsfw: expr += app["expressions"]["nsfw"]
+                if is_extreme: expr += app["expressions"]["extreme"]
+                prompts.append(random.choice(expr))
+                
             if clothing_mode == "Full Set (全身セット)":
-                clothes_list = list(app["clothes_sets"]["sfw"])
-                if is_nsfw: clothes_list += app["clothes_sets"]["nsfw"]
-                if is_extreme: clothes_list += app["clothes_sets"]["extreme"]
-                prompts.append(random.choice(clothes_list))
+                clothes = list(app["clothes_sets"]["sfw"])
+                if is_nsfw: clothes += app["clothes_sets"]["nsfw"]
+                if is_extreme: clothes += app["clothes_sets"]["extreme"]
+                prompts.append(random.choice(clothes))
             else:
-                separates = app["separates"]
-                for part in ["tops", "bottoms", "underwear"]:
-                    part_list = list(separates[part]["sfw"])
-                    if is_nsfw: part_list += separates[part]["nsfw"]
-                    if is_extreme: part_list += separates[part]["extreme"]
-                    prompts.append(random.choice(part_list))
+                seps = app["separates"]
+                for p in ["tops", "bottoms", "underwear"]:
+                    lst = list(seps[p]["sfw"])
+                    if is_nsfw: lst += seps[p]["nsfw"]
+                    if is_extreme: lst += seps[p]["extreme"]
+                    prompts.append(random.choice(lst))
+            
             if "accessories" in app: prompts.append(random.choice(app["accessories"]))
 
-        allowed_levels = ["sfw"]
-        if is_nsfw: allowed_levels.append("nsfw")
-        if is_extreme: allowed_levels.append("extreme")
-        valid_situations = [s for s in data["situations"] if s.get("nsfw_level", "sfw") in allowed_levels]
-        situation = random.choice(valid_situations) if valid_situations else {"tags": "", "poses": ["standing"]}
-        prompts.append(situation["tags"])
-
+        allowed = ["sfw"]
+        if is_nsfw: allowed.append("nsfw")
+        if is_extreme: allowed.append("extreme")
+        
+        sits = [s for s in data["situations"] if s.get("nsfw_level", "sfw") in allowed]
+        sit = random.choice(sits) if sits else {"tags":"", "poses":["standing"]}
+        prompts.append(sit["tags"])
+        
         if gen_mode == "Context-Aware (状況に合わせる)":
-            prompts.append(random.choice(situation["poses"]))
+            prompts.append(random.choice(sit["poses"]))
         else:
             prompts.append(random.choice(data["random_poses"]))
-
-        final_prompt = ", ".join(list(set(prompts)))
-        if use_quality: final_prompt = data["quality_tags"] + ", " + final_prompt
-        return final_prompt
-    except Exception as e: return f"Error: {str(e)}"
+            
+        final = ", ".join(list(set(prompts)))
+        if use_quality: final = data["quality_tags"] + ", " + final
+        return final
+    except Exception as e: return str(e)
 
 # --- Save/Load Logic ---
 def save_prompt_action(name, prompt):
-    if not name or not prompt: return gr.update(), "Name/Prompt empty"
-    saved_data = load_data("saved")
-    saved_data[name] = prompt
+    if not name: return gr.update(), "Error: No Name"
+    d = load_data("saved")
+    d[name] = prompt
     with open(get_paths()["saved"], "w", encoding="utf-8") as f:
-        json.dump(saved_data, f, indent=2, ensure_ascii=False)
-    return gr.update(choices=list(saved_data.keys())), f"Saved: {name}"
+        json.dump(d, f, indent=2, ensure_ascii=False)
+    return gr.update(choices=list(d.keys())), f"Saved: {name}"
 
-def load_prompt_action(selected_name):
-    saved_data = load_data("saved")
-    return saved_data.get(selected_name, "")
+def load_prompt_action(name):
+    return load_data("saved").get(name, "")
 
-# --- UI ---
+# --- UI Builder ---
 def on_ui_tabs():
-    data = load_data("tags")
-    quality_default = data["quality_tags"] if data else ""
     saved_data = load_data("saved")
     saved_choices = list(saved_data.keys()) if saved_data else []
+    
+    # Pre-scan LoRAs for Tabs
+    lora_structure = get_lora_structure()
 
-    with gr.Blocks(analytics_enabled=False, css=CSS) as ui_component:
+    with gr.Blocks(analytics_enabled=False, css=CSS) as ui:
+        # Dummy JS injection
+        gr.HTML(visible=False, value=f"<script>{JS_SCRIPT.replace('async (x)', 'window.JS_SCRIPT_FUNC = async function(x)')}</script>")
+
         with gr.Row():
-            # Left Column
+            # --- LEFT ---
             with gr.Column(scale=1, min_width=300):
-                gr.Markdown("### 🎲 Random Gen v1.7")
+                gr.Markdown("### 🎲 Random Gen v1.8")
                 with gr.Group():
-                    gen_mode_radio = gr.Radio(["Context-Aware (状況に合わせる)", "Random Chaos (完全ランダム)"], label="Mode", value="Context-Aware (状況に合わせる)")
-                    clothing_mode_radio = gr.Radio(["Full Set (全身セット)", "Mix & Match (パーツ別ランダム)"], label="Outfit", value="Full Set (全身セット)")
+                    gen_mode = gr.Radio(["Context-Aware (状況に合わせる)", "Random Chaos (完全ランダム)"], label="Mode", value="Context-Aware (状況に合わせる)")
+                    cloth_mode = gr.Radio(["Full Set (全身セット)", "Mix & Match (パーツ別ランダム)"], label="Outfit", value="Full Set (全身セット)")
                     with gr.Row():
-                        nsfw_checkbox = gr.Checkbox(label="🔞 NSFW", value=False)
-                        extreme_checkbox = gr.Checkbox(label="🔥 Extreme", value=False)
-                    quality_checkbox = gr.Checkbox(label="Quality Tags", value=True)
+                        nsfw = gr.Checkbox(label="🔞 NSFW", value=False)
+                        extreme = gr.Checkbox(label="🔥 Extreme", value=False)
+                    quality = gr.Checkbox(label="Quality Tags", value=True)
+                
                 btn_gen = gr.Button("🎲 GENERATE", variant="primary", size="lg")
                 
                 gr.Markdown("---")
                 with gr.Group():
-                    saved_dropdown = gr.Dropdown(label="Load Prompt", choices=saved_choices)
-                    save_name = gr.Textbox(label="Save Name", placeholder="Name...")
+                    saved_dd = gr.Dropdown(label="Load", choices=saved_choices)
+                    save_name = gr.Textbox(label="Name", placeholder="Save name...")
                     btn_save = gr.Button("Save")
                     save_msg = gr.Markdown("")
 
-            # Right Column
+            # --- RIGHT ---
             with gr.Column(scale=2):
-                output_box = gr.Textbox(label="Prompt", lines=4, interactive=True, show_copy_button=True, elem_id="random_gen_result_box")
+                output_box = gr.Textbox(label="Prompt", lines=4, interactive=True, elem_id="random_gen_result_box", show_copy_button=True)
                 
                 with gr.Row():
-                    # JS arguments: dummy input
-                    btn_send_txt = gr.Button("👉 txt2img")
-                    btn_send_img = gr.Button("👉 img2img")
+                    btn_txt = gr.Button("👉 Send to txt2img")
+                    btn_img = gr.Button("👉 Send to img2img")
 
-                # --- LoRA Browser Section ---
-                gr.Markdown("### 🧬 LoRA Quick Select")
-                with gr.Group():
-                    with gr.Row():
-                        lora_search = gr.Textbox(label="Search LoRA", placeholder="Filter by name...", scale=4)
-                        btn_refresh_lora = gr.Button("🔄 Scan/Refresh", scale=1)
-                    
-                    # HTML Container for LoRAs
-                    lora_html_area = gr.HTML(value="Click Refresh to load LoRAs...")
+                # --- LoRA Tabs Section ---
+                gr.Markdown("### 🧬 LoRA Library")
+                
+                if lora_structure:
+                    with gr.Tabs():
+                        for folder, items in lora_structure.items():
+                            with gr.TabItem(label=f"{folder} ({len(items)})"):
+                                with gr.Column(elem_classes=["lora-tab-container"]):
+                                    gr.HTML(make_html_for_loras(items))
+                else:
+                    gr.Markdown(f"**Error:** LoRA folder not found at `{TARGET_LORA_DIR}`. Please check the path in script.")
 
-        # --- Events ---
-        btn_gen.click(
-            fn=generate_prompt_logic,
-            inputs=[gen_mode_radio, clothing_mode_radio, nsfw_checkbox, extreme_checkbox, quality_checkbox],
-            outputs=[output_box]
-        )
-
-        # Send buttons (JS only)
-        btn_send_txt.click(fn=None, inputs=[], outputs=[], _js='() => ' + JS_SCRIPT.replace("JS_ACTION", "send_txt").replace("return \"\";", "return window.JS_SCRIPT_FUNC(\"send_txt\");").replace('async (x) =>', 'async () => { return window.addLoraToGen ? window.JS_SCRIPT_FUNC("send_txt") : ""; }'))
-        # ※GradioのJS呼び出しは癖があるため、シンプルに埋め込み関数を定義して呼び出す方式にします
-        # 下記のダミー要素を使ってJSを注入・実行します
+        # Actions
+        btn_gen.click(fn=generate_prompt_logic, inputs=[gen_mode, cloth_mode, nsfw, extreme, quality], outputs=[output_box])
+        btn_save.click(fn=save_prompt_action, inputs=[save_name, output_box], outputs=[saved_dd, save_msg])
+        saved_dd.change(fn=load_prompt_action, inputs=[saved_dd], outputs=[output_box])
         
-        dummy_js = gr.HTML(visible=False, value=f"<script>{JS_SCRIPT.replace('async (x)', 'window.JS_SCRIPT_FUNC = async function(x)')}</script>")
-        
-        btn_send_txt.click(fn=None, _js='() => window.JS_SCRIPT_FUNC("send_txt")')
-        btn_send_img.click(fn=None, _js='() => window.JS_SCRIPT_FUNC("send_img")')
+        # JS Actions
+        btn_txt.click(fn=None, _js='() => window.JS_SCRIPT_FUNC("send_txt")')
+        btn_img.click(fn=None, _js='() => window.JS_SCRIPT_FUNC("send_img")')
 
-        # Save/Load
-        btn_save.click(fn=save_prompt_action, inputs=[save_name, output_box], outputs=[saved_dropdown, save_msg])
-        saved_dropdown.change(fn=load_prompt_action, inputs=[saved_dropdown], outputs=[output_box])
-
-        # LoRA Events
-        btn_refresh_lora.click(fn=make_lora_html, inputs=[lora_search], outputs=[lora_html_area])
-        lora_search.change(fn=make_lora_html, inputs=[lora_search], outputs=[lora_html_area])
-
-    return [(ui_component, "Random Gen", "random_gen_tab")]
+    return [(ui, "Random Gen", "random_gen_tab")]
 
 script_callbacks.on_ui_tabs(on_ui_tabs)
